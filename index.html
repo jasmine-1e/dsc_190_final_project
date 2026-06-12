@@ -1,0 +1,1806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UCSD Supplier Experience Survey · Analytical Studio</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --accent: #5b8ef0; --accent2: #e06c4c; --accent3: #4ecdc4;
+    --good: #4caf82; --warn: #e0a84c; --bad: #e05c5c; --radius: 10px;
+  }
+  /* ── Dark theme (default) ── */
+  html[data-theme="dark"], html:not([data-theme]) {
+    --bg: #0f1117; --surface: #181c27; --surface2: #1f2535; --border: #2a3045;
+    --text: #e8eaf0; --muted: #7a83a0; --chart-grid: #2a3045; --chart-tick: #7a83a0;
+  }
+  /* ── Light theme ── */
+  html[data-theme="light"] {
+    --bg: #f4f6fb; --surface: #ffffff; --surface2: #eef1f8; --border: #d4daea;
+    --text: #1a1f30; --muted: #6b7591; --chart-grid: #e0e5f0; --chart-tick: #6b7591;
+  }
+  /* ── Auto: follows OS preference ── */
+  @media (prefers-color-scheme: dark) {
+    html[data-theme="auto"] {
+      --bg: #0f1117; --surface: #181c27; --surface2: #1f2535; --border: #2a3045;
+      --text: #e8eaf0; --muted: #7a83a0; --chart-grid: #2a3045; --chart-tick: #7a83a0;
+    }
+  }
+  @media (prefers-color-scheme: light) {
+    html[data-theme="auto"] {
+      --bg: #f4f6fb; --surface: #ffffff; --surface2: #eef1f8; --border: #d4daea;
+      --text: #1a1f30; --muted: #6b7591; --chart-grid: #e0e5f0; --chart-tick: #6b7591;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', -apple-system, sans-serif; font-size: 14px; line-height: 1.5; transition: background .2s, color .2s; }
+  
+  .app { display: grid; grid-template-columns: 260px 1fr; grid-template-rows: 56px 1fr; min-height: 100vh; }
+  header { grid-column: 1/-1; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; gap: 16px; }
+  header h1 { font-size: 15px; font-weight: 700; color: var(--text); }
+  header .badge { background: var(--accent); color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 600; }
+  header .spacer { flex: 1; }
+  header .row-count { color: var(--muted); font-size: 12px; font-family: monospace; }
+
+  nav { background: var(--surface); border-right: 1px solid var(--border); padding: 16px 0; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+  nav .nav-section { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 12px 16px 4px; }
+  nav button { background: none; border: none; color: var(--muted); cursor: pointer; text-align: left; padding: 10px 16px; width: 100%; font-size: 13px; border-left: 3px solid transparent; display: flex; align-items: center; gap: 8px; transition: all .15s; }
+  nav button:hover { color: var(--text); background: var(--surface2); }
+  nav button.active { color: var(--accent); background: rgba(91,142,240,.08); border-left-color: var(--accent); }
+  nav .nav-icon { font-size: 15px; width: 18px; text-align: center; }
+
+  main { padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+
+  /* ── 15 Pinned Questions Filter Matrix ── */
+  .filter-grid-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  @media (max-width: 1200px) { .filter-grid-panel { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 768px) { .filter-grid-panel { grid-template-columns: 1fr; } }
+  .filter-cell { display: flex; flex-direction: column; gap: 4px; overflow: visible; }
+  .filter-cell label { font-size: 11px; color: var(--muted); font-weight: 600; white-space: nowrap; overflow: visible; display:flex; align-items:center; gap:4px; }
+  .filter-cell select { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; width: 100%; text-overflow: ellipsis; }
+  .filter-cell select:focus { outline: none; border-color: var(--accent); }
+  .filter-panel-footer { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border); padding-top: 10px; margin-top: 4px; }
+
+  /* ── Filter question ⓘ info icon ── uses JS #cell-tooltip, no ::after needed */
+  .q-info-btn {
+    display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
+    width:14px; height:14px; border-radius:50%;
+    background:var(--surface2); border:1px solid var(--border);
+    color:var(--muted); font-size:9px; font-weight:700; font-style:normal;
+    cursor:pointer; line-height:1;
+    transition:background .12s, color .12s, border-color .12s;
+  }
+  .q-info-btn:hover { background:var(--accent); color:#fff; border-color:var(--accent); }
+
+  /* ── Structural Navigation Tabs ── */
+  .tab-bar { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+  .tab-btn { background: none; border: none; color: var(--muted); cursor: pointer; padding: 10px 18px; font-size: 13px; font-weight: 500; border-bottom: 2px solid transparent; transition: all .15s; }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 700; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
+  .card-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 14px; line-height: 1.4; }
+  .card-grid { display: grid; gap: 16px; }
+  .card-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+  .card-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .card-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+  @media (max-width: 900px) { .card-grid.cols-4, .card-grid.cols-3, .card-grid.cols-2 { grid-template-columns: 1fr; } }
+
+  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .kpi .val { font-size: 28px; font-weight: 800; line-height: 1; margin-bottom: 4px; }
+  .kpi .lbl { font-size: 12px; color: var(--muted); font-weight: 500; }
+  .kpi .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .kpi.good .val { color: var(--good); }
+  .kpi.warn .val { color: var(--warn); }
+  .kpi.accent .val { color: var(--accent); }
+
+  .chart-wrap { position: relative; height: 240px; width: 100%; }
+  .chart-wrap.tall { height: 320px; }
+
+  /* ── Insight chips ── */
+  .insight-list { display: flex; flex-direction: column; gap: 10px; }
+  .insight { background: var(--surface2); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; padding: 12px 14px; font-size: 13px; line-height: 1.5; }
+  .insight.warn { border-left-color: var(--warn); }
+  .insight.good { border-left-color: var(--good); }
+  .insight.bad { border-left-color: var(--bad); }
+  .insight strong { color: var(--accent); }
+  .insight.warn strong { color: var(--warn); }
+  .insight.good strong { color: var(--good); }
+  .insight.bad strong { color: var(--bad); }
+
+  .table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; }
+  th { background: var(--surface2); padding: 12px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  tr:hover td { background: var(--surface2); }
+  
+  .cell-pill { display: inline-block; background: rgba(91,142,240,.12); color: var(--accent); border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; margin: 1px; }
+  .cell-pill.green { background: rgba(76,175,130,.15); color: var(--good); }
+  .cell-pill.red { background: rgba(224,92,92,.15); color: var(--bad); }
+
+  .pagination { display: flex; align-items: center; gap: 6px; justify-content: flex-end; padding: 12px 0; }
+  .pagination button { background: var(--surface2); border: 1px solid var(--border); color: var(--muted); border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 12px; }
+  .pagination button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .comment-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 10px; }
+  .comment-meta { font-size: 11px; color: var(--muted); margin-bottom: 6px; display: flex; gap: 8px; align-items: center; }
+  .comment-text { font-size: 13px; line-height: 1.6; color: var(--text); white-space: normal !important; }
+  .comment-card mark { background: rgba(91,142,240,.35); color: #fff; border-radius: 2px; padding: 0 2px; }
+  
+  .search-box, .comment-field-select { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 8px 12px; font-size: 13px; width: 100%; margin-bottom: 12px; }
+
+  .hbar-list { display: flex; flex-direction: column; gap: 8px; }
+  .hbar-item { display: flex; align-items: center; gap: 10px; }
+  .hbar-label { font-size: 12px; color: var(--muted); min-width: 180px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hbar-track { flex: 1; background: var(--surface2); border-radius: 4px; height: 20px; overflow: hidden; position: relative; }
+  .hbar-fill { height: 100%; border-radius: 4px; display: flex; align-items: center; padding-left: 8px; font-size: 11px; font-weight: 700; color: #fff; transition: width .3s; }
+  .hbar-count { font-size: 12px; color: var(--muted); min-width: 35px; text-align: right; }
+
+  .btn { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+
+  .page { display: none; }
+  .page.active { display: flex; flex-direction: column; gap: 20px; }
+  .no-data { text-align: center; color: var(--muted); padding: 30px; font-size: 13px; }
+  .section-head h2 { font-size: 18px; font-weight: 800; color: var(--text); }
+  
+  .cohort-box { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-bottom: 12px; }
+  .cohort-box select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 6px; font-size: 13px; }
+  
+  #wordcloud-canvas { width: 100%; height: 320px; display: block; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); }
+
+  /* ── Theme toggle ── */
+  .theme-toggle { display:flex; align-items:center; gap:6px; }
+  .theme-toggle select { background:var(--surface2); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:4px 8px; font-size:12px; cursor:pointer; }
+
+  /* ── NLP Disclaimer ── */
+  .nlp-warn-icon { display:inline-block; cursor:pointer; font-size:14px; margin-left:6px; opacity:.75; }
+  .nlp-warn-icon:hover { opacity:1; }
+  .disclaimer-banner { background:rgba(224,168,76,.1); border:1px solid rgba(224,168,76,.35); border-radius:8px; padding:10px 14px; font-size:11px; color:var(--muted); line-height:1.5; margin-bottom:14px; }
+  .disclaimer-banner strong { color:var(--warn); }
+  /* ── Disclaimer modal ── */
+  #disclaimer-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:200; align-items:center; justify-content:center; }
+  #disclaimer-modal.open { display:flex; }
+  .disclaimer-modal-inner { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:24px; max-width:560px; width:92vw; }
+  .disclaimer-modal-inner h3 { color:var(--warn); margin-bottom:12px; font-size:14px; }
+  .disclaimer-modal-inner p { font-size:12px; color:var(--muted); line-height:1.7; }
+  .disclaimer-modal-inner button { margin-top:16px; }
+
+  /* ── Full-text td tooltip (click-to-expand) ── */
+  td.expandable { cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px; }
+  td.expandable.expanded { white-space:normal; overflow:visible; max-width:none; background:var(--surface2); }
+  td.expandable .expand-hint { text-decoration:underline; text-decoration-style:dotted; color:var(--accent); }
+
+  /* ── Other (Please specify) popup list ── */
+  .other-verbatim-popup { position:absolute; z-index:50; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px; box-shadow:0 8px 24px rgba(0,0,0,.4); max-width:340px; min-width:200px; font-size:12px; display:none; }
+  .other-verbatim-popup.open { display:block; }
+  .other-verbatim-popup ul { list-style:none; display:flex; flex-direction:column; gap:5px; max-height:260px; overflow-y:auto; }
+  .other-verbatim-popup ul li { padding:5px 8px; border-bottom:1px solid var(--border); line-height:1.4; color:var(--text); }
+  .other-verbatim-popup ul li:last-child { border-bottom:none; }
+  .other-verbatim-popup .popup-title { font-weight:700; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; }
+  .other-verbatim-popup .popup-close { cursor:pointer; color:var(--muted); font-size:16px; line-height:1; }
+  .other-verbatim-popup .popup-close:hover { color:var(--text); }
+  .plot-card-wrapper { position:relative; }
+  /* ── Term frequency ranked table ── */
+  .term-rank-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .term-rank-table tr { border-bottom:1px solid var(--border); }
+  .term-rank-table tr:last-child { border-bottom:none; }
+  .term-rank-table td { padding:7px 8px; vertical-align:middle; }
+  .term-rank-table .rank-num { color:var(--muted); font-size:10px; font-weight:700; width:24px; text-align:right; padding-right:12px; }
+  .term-rank-table .rank-word { font-weight:600; color:var(--text); }
+  .term-rank-table .rank-bar-cell { width:40%; }
+  .term-rank-table .rank-bar-wrap { background:var(--surface2); border-radius:3px; height:14px; overflow:hidden; }
+  .term-rank-table .rank-bar-fill { height:100%; border-radius:3px; }
+  .term-rank-table .rank-count { color:var(--muted); font-size:11px; text-align:right; white-space:nowrap; padding-left:8px; }
+  /* ── Custom cell tooltip (shows full value on hover) ── */
+  .has-tip { cursor:default; }
+  #cell-tooltip {
+    position:fixed; z-index:9999;
+    background:var(--surface); border:1px solid var(--border);
+    color:var(--text); font-size:12px; line-height:1.5;
+    padding:9px 13px; border-radius:8px;
+    white-space:pre-wrap; word-break:break-word;
+    max-width:400px; min-width:100px;
+    box-shadow:0 8px 24px rgba(0,0,0,.5);
+    pointer-events:none;
+    display:none;
+  }
+  /* ── Chart type toggle buttons ── */
+  .chart-type-btn {
+    background:var(--surface); border:1px solid var(--border); color:var(--muted);
+    border-radius:5px; padding:3px 10px; font-size:11px; font-weight:600; cursor:pointer;
+    transition:all .12s;
+  }
+  .chart-type-btn:hover { color:var(--text); border-color:var(--muted); }
+  .chart-type-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+</style>
+</head>
+<body>
+<div id="cell-tooltip"></div>
+<div class="app">
+
+<header>
+  <span style="font-size:20px">📋</span>
+  <h1>UC San Diego IPPS Survey</h1>
+  <span class="badge">Ecosystem Analytics</span>
+  <div class="spacer"></div>
+  <span class="row-count" id="row-count">Loading workspace...</span>
+  <div class="theme-toggle">
+    <label style="font-size:11px;color:var(--muted)">Theme</label>
+    <select id="theme-select" onchange="setTheme(this.value)">
+      <option value="dark">Dark</option>
+      <option value="light">Light</option>
+      <option value="auto">Auto</option>
+    </select>
+  </div>
+</header>
+
+<!-- Disclaimer Modal -->
+<div id="disclaimer-modal">
+  <div class="disclaimer-modal-inner">
+    <h3>⚠️ Sentiment Analysis Disclaimer</h3>
+    <p>The sentiment analysis provided on this platform is generated using automated natural language processing (NLP) algorithms. Sentiment analysis is inherently subjective and may fail to accurately capture sarcasm, nuance, or contextual meanings.<br><br>
+    This data is provided for <strong>informational purposes only</strong> and does not constitute financial, legal, or professional advice. No representations or warranties of any kind, express or implied, are made about the accuracy, reliability, or completeness of this information.<br><br>
+    <strong>Users should not rely solely on this analysis when making business, personal, or investment decisions.</strong> Always read the actual feedback before drawing conclusions.</p>
+    <button class="btn" onclick="document.getElementById('disclaimer-modal').classList.remove('open')">Close</button>
+  </div>
+</div>
+
+<nav>
+  <div class="nav-section">Structural Tabs</div>
+  <button class="active" id="nav-summary" onclick="showTab('summary')"><span class="nav-icon">📊</span> Tab 1: Survey Summary</button>
+  <button id="nav-plots" onclick="showTab('plots')"><span class="nav-icon">📈</span> Tab 2: All Question Plots</button>
+  <button id="nav-observations" onclick="showTab('observations')"><span class="nav-icon">🔬</span> Tab 3: Observations</button>
+  <div class="nav-section">Text Exploration</div>
+  <button id="nav-comments" onclick="showTab('comments')"><span class="nav-icon">💬</span> Comment Miner</button>
+  <button id="nav-wordcloud" onclick="showTab('wordcloud')"><span class="nav-icon">☁️</span> Word Clouds</button>
+</nav>
+
+<main>
+
+  <div class="filter-grid-panel">
+    <div class="filter-cell">
+      <label id="lbl-f-q1">Q1. Organization Type</label>
+      <select id="f-q1" onchange="runGlobalFiltering()"><option value="">All Responses</option></select>
+    </div>
+    <div class="filter-cell">
+      <label id="lbl-f-q2">Q2. Respondent Role</label>
+      <select id="f-q2" onchange="runGlobalFiltering()"><option value="">All Responses</option></select>
+    </div>
+    <div class="filter-cell">
+      <label id="lbl-f-q3">Q3. Aware of PaymentWorks?</label>
+      <select id="f-q3" onchange="runGlobalFiltering()"><option value="">All Responses</option></select>
+    </div>
+    <div class="filter-cell">
+      <label id="lbl-f-q4">Q4. PaymentWorks Actions</label>
+      <select id="f-q4" onchange="runGlobalFiltering()"><option value="">All Responses</option></select>
+    </div>
+    <div class="filter-cell">
+      <label id="lbl-f-q5">Q5. PaymentWorks Difficulties</label>
+      <select id="f-q5" onchange="runGlobalFiltering()"><option value="">All Responses</option></select>
+    </div>
+    <div class="filter-cell">
+      <label id="lbl-f-q6">Q6. PaymentWorks Support Source</label>
+      <select id="f-q6" onchange="runGlobalFiltering()"><option value="">All Responses</option></select>
+    </div>
+    <div class="filter-cell">
+      <label id="lbl-f-q8">Q8. Aware of Transcepta?</label>
+      <select id="f-q8" onchange="runGlobalFiltering()"><option value="">All Responses</option></select>
+    </div>
+    <div class="filter-cell">
+      <label id="lbl-f-q9">Q9. Invoice Submission Method</label>
+      <select id="f-q9" onchange="runGlobalFiltering()"><option value="">All Responses</option></select>
+    </div>
+    <div class="filter-cell">
+      <label id="lbl-f-q10">Q10. Transcepta Interactions</label>
+      <select id="f-q10" onchange="runGlobalFiltering()"><option value="">All Responses</option></select>
+    </div>
+    <div class="filter-cell">
+      <label id="lbl-f-q11">Q11. Transcepta Difficulties</label>
+      <select id="f-q11" onchange="runGlobalFiltering()"><option value="">All Responses</option></select>
+    </div>
+    <div class="filter-cell">
+      <label id="lbl-f-q12">Q12. Transcepta Support Source</label>
+      <select id="f-q12" onchange="runGlobalFiltering()"><option value="">All Responses</option></select>
+    </div>
+    <div class="filter-cell">
+      <label id="lbl-f-q14">Q14. IPPS Resources Aware Of</label>
+      <select id="f-q14" onchange="runGlobalFiltering()"><option value="">All Responses</option></select>
+    </div>
+    <div class="filter-cell">
+      <label id="lbl-f-q15">Q15. IPPS Difficulties Experienced</label>
+      <select id="f-q15" onchange="runGlobalFiltering()"><option value="">All Responses</option></select>
+    </div>
+    <div class="filter-cell">
+      <label id="lbl-f-q16">Q16. PO Clarity Rating</label>
+      <select id="f-q16" onchange="runGlobalFiltering()"><option value="">All Responses</option></select>
+    </div>
+    <div class="filter-cell">
+      <label id="lbl-f-q17">Q17. Aware of PO Non-Payment Risk?</label>
+      <select id="f-q17" onchange="runGlobalFiltering()"><option value="">All Responses</option></select>
+    </div>
+    <div class="filter-panel-footer">
+      <span id="global-filter-metrics" style="font-size:12px; font-weight:600; color:var(--accent);">Initializing dataset...</span>
+      <button class="btn btn-ghost" onclick="clearAllGlobalFilters()">Reset All Filters</button>
+    </div>
+  </div>
+
+  <div class="page active" id="tab-summary">
+    <div>
+      <div class="section-head"><h2>Tab 1: Structural Survey Metadata Summary</h2></div>
+      <p style="color:var(--muted);font-size:13px">Meta-metrics tracking participation configurations, text yields, and commentary shapes across active cohorts.</p>
+    </div>
+    
+    <div class="card-grid cols-4" id="summary-kpis"></div>
+
+    <div class="disclaimer-banner">
+      <strong>⚠️ Disclaimer:</strong> The sentiment analysis on this tab is generated using automated NLP algorithms. It is inherently subjective and may fail to capture sarcasm, nuance, or contextual meaning. Provided for informational purposes only — do not rely solely on this when making decisions. <span class="nlp-warn-icon" onclick="document.getElementById('disclaimer-modal').classList.add('open')" title="Read full disclaimer">ℹ️ Read full disclaimer</span>
+    </div>
+
+    <div class="card-grid cols-2">
+      <div class="card">
+        <div class="card-title">Comment Distribution by Organization Type</div>
+        <div class="chart-wrap"><canvas id="chart-sum-org"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Feedback Sentiment Cohort Analytics</div>
+        <div class="chart-wrap"><canvas id="chart-sum-sentiment"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card-grid cols-2">
+      <div class="card">
+        <div class="card-title">AI Analytical Key Findings</div>
+        <div id="insights-main" class="insight-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Automated Comment Themes</div>
+        <div id="insights-comments" class="insight-list"></div>
+      </div>
+    </div>
+    
+    <div class="card">
+      <div class="card-title">Summary Operational Statistics Breakdown</div>
+      <div id="insights-stats" class="hbar-list"></div>
+    </div>
+  </div>
+
+  <div class="page" id="tab-plots">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+      <div>
+        <div class="section-head"><h2>Tab 2: Survey Response Distribution Grid</h2></div>
+        <p style="color:var(--muted);font-size:13px">All 15 survey questions evaluated simultaneously with descriptive custom tooltips enabled.</p>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px; background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:8px 12px;">
+        <span style="font-size:11px; color:var(--muted); font-weight:600;">Chart type:</span>
+        <button id="tab2-type-bar" class="chart-type-btn active" onclick="setTab2Type('bar')">Bar</button>
+        <button id="tab2-type-donut" class="chart-type-btn" onclick="setTab2Type('donut')">Donut</button>
+      </div>
+    </div>
+    <div class="card-grid cols-2" id="plots-container"></div>
+  </div>
+
+  <div class="page" id="tab-observations">
+    <div>
+      <div class="section-head"><h2>Tab 3: Microdata Observation Browser &amp; Cross-Cohort Tracer</h2></div>
+      <p style="color:var(--muted);font-size:13px">Track individual records or apply custom tracer filters dynamically across all 15 questions simultaneously.</p>
+    </div>
+
+    <div class="cohort-box" style="display:grid; grid-template-columns:1fr auto; gap:16px; align-items:start;">
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        <span style="font-weight:700; font-size:13px; color:var(--accent); display:flex; align-items:center; gap:6px;">
+          Cross-Tab Cohort Tracer
+          <span style="font-size:11px; color:var(--muted); font-weight:400;">— combine with the filters above to drill down</span>
+        </span>
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <label style="font-size:11px; color:var(--muted); font-weight:600;">Question Column</label>
+          <select id="cohort-col" onchange="populateCohortValues()" style="background:var(--surface); border:1px solid var(--border); color:var(--text); padding:6px 10px; border-radius:6px; font-size:13px; max-width:420px;"></select>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <label style="font-size:11px; color:var(--muted); font-weight:600;">Target Answer Value</label>
+          <select id="cohort-val" onchange="runGlobalFiltering()" style="background:var(--surface); border:1px solid var(--border); color:var(--text); padding:6px 10px; border-radius:6px; font-size:13px; max-width:420px;"><option value="">No Tracer Active</option></select>
+        </div>
+        <div>
+          <button class="btn btn-ghost" onclick="resetCohortTracer()" style="font-size:12px; margin-top:4px;">Reset Tracer</button>
+        </div>
+      </div>
+      <div style="background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px 20px; text-align:center; min-width:130px;">
+        <div style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-bottom:6px;">Matching Observations</div>
+        <div id="cohort-match-count" style="font-size:28px; font-weight:800; color:var(--accent); line-height:1; margin-bottom:4px;">—</div>
+        <div id="cohort-match-pct" style="font-size:11px; color:var(--muted);">— of total</div>
+      </div>
+    </div>
+
+    <!-- Restored dynamic 15-question distribution panel on Tab 3 observations window -->
+    <div class="card" style="margin-bottom:12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+        <div class="card-title" id="obs-plots-header" style="margin-bottom:0;">Current Filtered Cohort Visualization Matrix</div>
+        <div style="display:flex; align-items:center; gap:8px; background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:6px 10px;">
+          <span style="font-size:11px; color:var(--muted); font-weight:600;">Chart type:</span>
+          <button id="tab3-type-bar" class="chart-type-btn active" onclick="setTab3Type('bar')">Bar</button>
+          <button id="tab3-type-donut" class="chart-type-btn" onclick="setTab3Type('donut')">Donut</button>
+        </div>
+      </div>
+      <div class="card-grid cols-3" id="obs-plots-grid" style="gap:10px;"></div>
+    </div>
+
+    <div class="filter-bar" style="background:var(--surface); border:1px solid var(--border); padding:10px 14px; border-radius:var(--radius); display:flex; gap:12px; align-items:center;">
+      <input type="text" id="obs-search" placeholder="Search string entries..." oninput="renderObservationsTable()" style="background:var(--surface2); color:var(--text); border:1px solid var(--border); padding:6px 10px; border-radius:6px; font-size:13px; flex:1;">
+      <select id="obs-per-page" onchange="obsPage=1;renderObservationsTable()" style="background:var(--surface2); color:var(--text); border:1px solid var(--border); padding:6px; border-radius:6px; font-size:13px;">
+        <option value="15">15 rows</option>
+        <option value="30" selected>30 rows</option>
+        <option value="100">100 rows</option>
+      </select>
+    </div>
+
+    <div class="card" style="padding:0">
+      <div class="table-wrap" id="obs-table-container"></div>
+    </div>
+    <div class="pagination" id="obs-pagination-controls"></div>
+  </div>
+
+  <div class="page" id="tab-comments">
+    <div>
+      <div class="section-head"><h2>Comment Miner <span class="nlp-warn-icon" onclick="document.getElementById('disclaimer-modal').classList.add('open')" title="NLP Disclaimer">⚠️</span></h2></div>
+      <p style="color:var(--muted);font-size:13px">Full-text narrative evaluation across qualitative targets with integrated sentiment selection filter configurations.</p>
+    </div>
+    <div class="disclaimer-banner">
+      <strong>⚠️ Disclaimer:</strong> Sentiment classification is automated and approximate. Sarcasm, nuance, and conditional language may be misclassified. Read actual comments before drawing conclusions. <span class="nlp-warn-icon" onclick="document.getElementById('disclaimer-modal').classList.add('open')">ℹ️ Full disclaimer</span>
+    </div>
+    <div class="card">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+        <div>
+          <label style="font-size:11px; color:var(--muted); font-weight:600; display:block; margin-bottom:4px;">Target Question Text Column</label>
+          <select class="comment-field-select" id="mining-field" onchange="renderTextComments()" style="margin-bottom:0;">
+            <option value="all">All Free Text Columns</option>
+            <option value="paymentworks_issues_open">Q7. If you encountered any issues while using PaymentWorks, please describe them here.</option>
+            <option value="transcepta_issues_open">Q13. If you encountered any issues while using Transcepta, please describe them here.</option>
+            <option value="suggestions_open">Q18. Please share any suggestions for improving UC San Diego's support, communication, or supplier resources.</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px; color:var(--muted); font-weight:600; display:block; margin-bottom:4px;">Sentiment Classification Selector</label>
+          <select class="comment-field-select" id="mining-sentiment" onchange="renderTextComments()" style="margin-bottom:0;">
+            <option value="all">All Sentiments Combined</option>
+            <option value="Positive">Positive Sentiment Only</option>
+            <option value="Neutral">Neutral Sentiment Only</option>
+            <option value="Negative">Negative Sentiment Only</option>
+          </select>
+        </div>
+      </div>
+      
+      <input type="text" class="search-box" id="mining-search" placeholder="Filter strings by query term (e.g., 'error', 'slow')..." oninput="renderTextComments()">
+      
+      <!-- Sentiment Distribution Breakdown Chart for the text miner comments -->
+      <div style="background: var(--surface2); padding: 14px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 14px;">
+         <div class="card-title" style="margin-bottom: 8px;">Miner Comments Set Sentiment Distribution <span class="nlp-warn-icon" onclick="document.getElementById('disclaimer-modal').classList.add('open')" title="NLP Disclaimer">⚠️</span></div>
+         <div style="position: relative; height: 110px;"><canvas id="chart-miner-sentiment-dist"></canvas></div>
+      </div>
+
+      <div id="comments-render-deck"></div>
+    </div>
+  </div>
+
+  <div class="page" id="tab-wordcloud">
+    <div>
+      <div class="section-head"><h2>Word Cloud &amp; Key Term Statistics</h2></div>
+      <p style="color:var(--muted);font-size:13px">Top textual expressions mapped across narratives with standard stop words omitted.</p>
+    </div>
+    
+    <div class="card" style="margin-bottom:14px; display:flex; gap:16px; align-items:center;">
+       <div>
+         <label style="font-size:11px; color:var(--muted); font-weight:600; margin-right:6px">Max Words:</label>
+         <select id="wc-max-words" onchange="renderVisualWordCloud()" class="comment-field-select" style="width:auto; margin-bottom:0; display:inline-block; padding: 4px 10px;">
+           <option value="20" selected>20 words</option>
+           <option value="40">40 words</option>
+           <option value="75">75 words</option>
+           <option value="120">120 words</option>
+         </select>
+       </div>
+    </div>
+
+    <div class="card-grid cols-2">
+      <div class="card">
+        <div class="card-title">Visual Word Cloud Generation Panel</div>
+        <canvas id="wordcloud-canvas"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-title">Top Filtered Commentary Terms Frequency Breakdown</div>
+        <div id="wc-frequency-table" class="hbar-list"></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────
+// CONFIGURATION SCHEMA & DATA DICTIONARY SYSTEM
+// ─────────────────────────────────────────────────────────────
+let ALL_DATA = [];
+let FILTERED = [];
+let obsPage = 1;
+const PLOT_REGISTRY = {};
+const PALETTE = ['#5b8ef0','#e06c4c','#4ecdc4','#e0c44c','#c06cf0','#4caf82','#f07bcc','#7bcff0','#f0b05b','#6fe0a3'];
+
+// Chart type state
+let tab2ChartType = 'bar';
+let tab3ChartType = 'bar';
+
+function setTab2Type(type) {
+  tab2ChartType = type;
+  document.getElementById('tab2-type-bar').classList.toggle('active', type === 'bar');
+  document.getElementById('tab2-type-donut').classList.toggle('active', type === 'donut');
+  buildPlotCards();
+}
+function setTab3Type(type) {
+  tab3ChartType = type;
+  document.getElementById('tab3-type-bar').classList.toggle('active', type === 'bar');
+  document.getElementById('tab3-type-donut').classList.toggle('active', type === 'donut');
+  renderTab3CohortPlots();
+}
+
+const SURVEY_SCHEMA = {
+  q1:  { key: 'org_type',                    txt: 'Q1. How would you classify your organization?' },
+  q2:  { key: 'role',                         txt: 'Q2. Which of the following best describes your role?' },
+  q3:  { key: 'aware_paymentworks',           txt: 'Q3. Before this survey, were you aware of PaymentWorks?' },
+  q4:  { key: 'paymentworks_actions',         txt: 'Q4. Actions performed within PaymentWorks.' },
+  q5:  { key: 'paymentworks_difficulties',    txt: 'Q5. Actions found difficult within PaymentWorks.' },
+  q6:  { key: 'paymentworks_support_source',  txt: 'Q6. Where do you seek assistance regarding PaymentWorks profile changes/status?' },
+  q8:  { key: 'aware_transcepta',             txt: 'Q8. Before this survey, were you aware of Transcepta?' },
+  q9:  { key: 'invoice_submission_method',    txt: 'Q9. How do you submit your invoices?' },
+  q10: { key: 'transcepta_interactions',      txt: 'Q10. Types of interactions with Transcepta.' },
+  q11: { key: 'transcepta_difficulties',      txt: 'Q11. Transcepta interactions causing structural difficulty.' },
+  q12: { key: 'transcepta_support_source',    txt: 'Q12. Where do you seek assistance when you have questions about Transcepta?' },
+  q14: { key: 'ipps_resources_aware',         txt: 'Q14. UC San Diego IPPS resources aware of?' },
+  q15: { key: 'ipps_difficulties',            txt: 'Q15. Have you experienced difficulty accessing or using IPPS resources?' },
+  q16: { key: 'po_clarity_rating',            txt: 'Q16. Clarity of instructions provided on Purchase Orders.' },
+  q17: { key: 'aware_po_nonpayment',          txt: 'Q17. Aware that providing items before formal PO risks non-payment?' },
+  q7:  { key: 'paymentworks_issues_open',     txt: 'Q7. Optional PaymentWorks Issues Text', isOptional: true },
+  q13: { key: 'transcepta_issues_open',       txt: 'Q13. Optional Transcepta Issues Text', isOptional: true },
+  q18: { key: 'suggestions_open',             txt: 'Q18. Optional Suggestions Feedback Text', isOptional: true }
+};
+
+const NON_OPTIONAL_KEYS = ['q1','q2','q3','q4','q5','q6','q8','q9','q10','q11','q12','q14','q15','q16','q17'];
+const OPTIONAL_TEXT_KEYS = ['paymentworks_issues_open', 'transcepta_issues_open', 'suggestions_open'];
+
+// ─────────────────────────────────────────────────────────────
+// DATA ACCESS LOGIC & PARSING SUITE
+// ─────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', async () => {
+  await loadSystemWorkspace();
+});
+
+async function loadSystemWorkspace() {
+  try {
+    const path = 'survey_data.json';
+    const resp = await fetch(path);
+    if (!resp.ok) throw new Error('Network JSON fetch target failed');
+    ALL_DATA = await resp.json();
+    initializeApplicationStudio();
+  } catch(e) {
+    console.error('Error loading JSON data file:', e);
+    document.getElementById('row-count').textContent = 'Error loading survey data source configuration.';
+  }
+}
+
+function initializeApplicationStudio() {
+  injectFilterInfoIcons();
+  populateGlobalFiltersSelectors();
+  buildCohortSelectors();
+  buildObsPlotContainers();
+  runGlobalFiltering();
+}
+
+const FULL_QUESTION_TEXT = {
+  'f-q1':  'Q1. How would you classify your organization? (Select all that apply)',
+  'f-q2':  'Q2. Which of the following best describes your role?',
+  'f-q3':  'Q3. Before this survey, were you aware of PaymentWorks?',
+  'f-q4':  'Q4. Select which actions you or your company perform within PaymentWorks. (Select all that apply)',
+  'f-q5':  'Q5. Select which actions, if any, are difficult for you or your teams to perform within PaymentWorks. (Select all that apply)',
+  'f-q6':  'Q6. Where do you seek assistance when you have questions regarding updating your profile, checking payment status, or changing your bank account information? (Select all that apply)',
+  'f-q8':  'Q8. Before this survey, were you aware of Transcepta?',
+  'f-q9':  'Q9. How do you submit your invoices? (Select all that apply)',
+  'f-q10': 'Q10. Select the types of interactions you or your teams have with Transcepta. (Select all that apply)',
+  'f-q11': 'Q11. Select the Transcepta interactions, if any, that you or your teams have had difficulty with. (Select all that apply)',
+  'f-q12': 'Q12. Where do you seek assistance when you have questions about invoice status, invoice submission, or need guidance on how to rectify invoice errors? (Select all that apply)',
+  'f-q14': 'Q14. Which of the following UC San Diego IPPS resources are you aware of? (Select all that apply)',
+  'f-q15': 'Q15. Have you experienced any difficulty accessing or using any of the following resources?',
+  'f-q16': 'Q16. How would you rate the clarity of the instructions provided on the Purchase Orders (POs) you receive?',
+  'f-q17': 'Q17. Are you aware that providing goods or services before receiving a formal Purchase Order (PO) may result in non-payment?',
+};
+
+function injectFilterInfoIcons() {
+  Object.entries(FULL_QUESTION_TEXT).forEach(([selectId, fullText]) => {
+    const selectEl = document.getElementById(selectId);
+    if (!selectEl) return;
+    const labelEl = selectEl.previousElementSibling;
+    if (!labelEl || labelEl.tagName !== 'LABEL') return;
+    if (labelEl.querySelector('.q-info-btn')) return;
+    const btn = document.createElement('i');
+    btn.className = 'q-info-btn';
+    btn.setAttribute('data-q', fullText);
+    btn.textContent = 'i';
+    btn.setAttribute('aria-label', 'Show full question text');
+    btn.addEventListener('click', e => e.stopPropagation());
+    labelEl.appendChild(btn);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// GLOBAL MATRIX NAVIGATION CONTROL PANEL
+// ─────────────────────────────────────────────────────────────
+function showTab(targetTabId) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  
+  const targetPage = document.getElementById('tab-' + targetTabId);
+  if (targetPage) targetPage.classList.add('active');
+  
+  const targetNav = document.getElementById('nav-' + targetTabId);
+  if (targetNav) targetNav.classList.add('active');
+  
+  if (targetTabId === 'plots') buildPlotCards();
+  if (targetTabId === 'observations') { renderTab3CohortPlots(); renderObservationsTable(); }
+  if (targetTabId === 'comments') renderTextComments();
+  if (targetTabId === 'wordcloud') renderVisualWordCloud();
+}
+
+// ─────────────────────────────────────────────────────────────
+// CORE FREQUENCY EVALUATORS & SENTIMENT ENGINE
+// ─────────────────────────────────────────────────────────────
+function evaluateFrequencyCounts(dataArray, propertyFieldKey) {
+  const absoluteCounts = {};
+  dataArray.forEach(item => {
+    const propertyValue = item[propertyFieldKey] || '';
+    if (!String(propertyValue).trim()) return; // skip blanks entirely
+    if (typeof propertyValue === 'string' && propertyValue.includes(',')) {
+      propertyValue.split(',').map(s => s.trim()).filter(Boolean).forEach(subToken => {
+        absoluteCounts[subToken] = (absoluteCounts[subToken] || 0) + 1;
+      });
+    } else {
+      const standardToken = String(propertyValue).trim();
+      absoluteCounts[standardToken] = (absoluteCounts[standardToken] || 0) + 1;
+    }
+  });
+  return Object.entries(absoluteCounts).sort((alpha, beta) => beta[1] - alpha[1]);
+}
+
+function calculateFeedbackSentiment(item) {
+  const combinedText = [item.paymentworks_issues_open, item.transcepta_issues_open, item.suggestions_open]
+    .map(s => (s || '').trim()).join(' ').trim();
+  if (!combinedText) return 'N/A';
+
+  const txt = combinedText.toLowerCase();
+
+  // Negative signals — explicit and hedged/qualified "positive" language that indicates problems
+  const negativePatterns = [
+    'difficult','awful','horrible','frustrat','worst','terrible','fail','slow','confus',
+    'poor','bad','reject','issue','problem','error','delay','unable','never','broken',
+    'unacceptable','impossible','complicated','cumbersome','inefficient','ineffective',
+    'not working','doesn\'t work','does not work','can\'t','cannot','won\'t',
+    'would be better','would be helpful','should not have to','shouldn\'t have to',
+    'we prefer','we would prefer','much more efficient than now','prefer to',
+    'needs improvement','needs to improve','could be improved','could be better',
+    'not ideal','not great','not good','not easy','not clear','not helpful',
+    'rather than','instead of','unfortunately','regret','disappoint',
+    'waste','overhead','burden','tedious','redundant','excessive','unnecessary',
+    'forced to','required to register','have to register','have to upload',
+    'should be','should have','shouldn\'t need','no reason','unreasonable',
+    'months of','weeks of','still waiting','still not','never received',
+    'no response','not resolved','not paid','non-payment','delayed payment',
+  ];
+
+  // Positive signals — only clearly positive, no qualifiers
+  const positivePatterns = [
+    'excellent','great','awesome','love','perfect','smooth','satisfied',
+    'thank you','appreciate','very helpful','very easy','very clear',
+    'works well','works great','no issues','no problems','no difficulties',
+    'happy with','pleased with','good experience','positive experience',
+  ];
+
+  const negCount = negativePatterns.filter(p => txt.includes(p)).length;
+  const posCount = positivePatterns.filter(p => txt.includes(p)).length;
+
+  // Any negative signal outweighs positive unless clearly dominated by positives
+  if (negCount > 0 && negCount >= posCount) return 'Negative';
+  if (posCount > 0 && posCount > negCount) return 'Positive';
+  return 'Neutral';
+}
+
+// ─────────────────────────────────────────────────────────────
+// DYNAMIC MULTI-COHORT REFRESH FILTERING
+// ─────────────────────────────────────────────────────────────
+function populateGlobalFiltersSelectors() {
+  NON_OPTIONAL_KEYS.forEach(keyId => {
+    const selectElement = document.getElementById('f-' + keyId);
+    if (!selectElement) return;
+    
+    const contextKey = SURVEY_SCHEMA[keyId].key;
+    const dynamicTupleList = evaluateFrequencyCounts(ALL_DATA, contextKey);
+    
+    selectElement.innerHTML = `<option value="">All Responses (${ALL_DATA.length})</option>`;
+    dynamicTupleList.forEach(([labelString, frequencyValue]) => {
+      const optionNode = document.createElement('option');
+      optionNode.value = labelString;
+      optionNode.textContent = `${labelString} (${frequencyValue})`;
+      selectElement.appendChild(optionNode);
+    });
+  });
+}
+
+function runGlobalFiltering() {
+  let pipelineData = [...ALL_DATA];
+  
+  NON_OPTIONAL_KEYS.forEach(keyId => {
+    const selectedFilterValue = document.getElementById('f-' + keyId)?.value || '';
+    if (selectedFilterValue) {
+      const contextKey = SURVEY_SCHEMA[keyId].key;
+      pipelineData = pipelineData.filter(record => {
+        const valueString = String(record[contextKey] || '');
+        return valueString === selectedFilterValue || valueString.includes(selectedFilterValue);
+      });
+    }
+  });
+
+  const tracerQuestionKey = document.getElementById('cohort-col')?.value;
+  const tracerTargetValue = document.getElementById('cohort-val')?.value;
+  if (tracerQuestionKey && tracerTargetValue) {
+    const contextSchemaKey = SURVEY_SCHEMA[tracerQuestionKey].key;
+    pipelineData = pipelineData.filter(record => {
+      const cellContentString = String(record[contextSchemaKey] || '');
+      return cellContentString === tracerTargetValue || cellContentString.includes(tracerTargetValue);
+    });
+  }
+
+  FILTERED = pipelineData;
+  
+  document.getElementById('row-count').textContent = `Total Baseline Matrix Count: ${ALL_DATA.length} records`;
+  document.getElementById('global-filter-metrics').textContent = `Filtered Scope yields ${FILTERED.length} rows (${Math.round(FILTERED.length / (ALL_DATA.length || 1) * 100)}% Match)`;
+
+  // Update cohort tracer count display
+  const cohortCountEl  = document.getElementById('cohort-match-count');
+  const cohortPctEl    = document.getElementById('cohort-match-pct');
+  if (cohortCountEl && cohortPctEl) {
+    cohortCountEl.textContent = FILTERED.length;
+    const pct = Math.round(FILTERED.length / (ALL_DATA.length || 1) * 100);
+    cohortPctEl.textContent = `${pct}% of ${ALL_DATA.length} total`;
+  }
+  
+  renderTab1SummaryLayout();
+  renderTab3CohortPlots();
+  
+  const activePageElement = document.querySelector('.page.active');
+  if (activePageElement?.id === 'tab-plots') buildPlotCards();
+  if (activePageElement?.id === 'tab-observations') renderObservationsTable();
+  if (activePageElement?.id === 'tab-comments') renderTextComments();
+  if (activePageElement?.id === 'tab-wordcloud') renderVisualWordCloud();
+}
+
+function clearAllGlobalFilters() {
+  NON_OPTIONAL_KEYS.forEach(keyId => {
+    const selectNode = document.getElementById('f-' + keyId);
+    if (selectNode) selectNode.value = '';
+  });
+  const cohortSelectVal = document.getElementById('cohort-val');
+  if (cohortSelectVal) cohortSelectVal.value = '';
+  runGlobalFiltering();
+}
+
+function resetCohortTracer() {
+  const col = document.getElementById('cohort-col');
+  const val = document.getElementById('cohort-val');
+  if (col) col.value = '';
+  if (val) { val.innerHTML = '<option value="">No Tracer Active</option>'; }
+  runGlobalFiltering();
+}
+
+// ─────────────────────────────────────────────────────────────
+// DESTRUCTION HANDLER & CANVAS CHART REGISTRY PIPELINE
+// ─────────────────────────────────────────────────────────────
+function buildRenderedChart(targetElementId, configurationsDeck) {
+  if (PLOT_REGISTRY[targetElementId]) {
+    PLOT_REGISTRY[targetElementId].destroy();
+  }
+  const canvasElementContext = document.getElementById(targetElementId);
+  if (!canvasElementContext) return;
+  PLOT_REGISTRY[targetElementId] = new Chart(canvasElementContext, configurationsDeck);
+}
+
+// ─────────────────────────────────────────────────────────────
+// TAB 1: SURVEY SUMMARY GRAPHICS & METADATA OVERVIEW
+// ─────────────────────────────────────────────────────────────
+function renderTab1SummaryLayout() {
+  const targetDeck = FILTERED;
+  const totalCount = targetDeck.length;
+  
+  let textResponseCount = 0;
+  let positiveCount = 0, negativeCount = 0, neutralCount = 0, naCount = 0;
+  
+  targetDeck.forEach(record => {
+    const hasText = OPTIONAL_TEXT_KEYS.some(k => (record[k] || '').trim().length > 0);
+    if (hasText) textResponseCount++;
+    
+    const sentiment = calculateFeedbackSentiment(record);
+    if (sentiment === 'Positive') positiveCount++;
+    else if (sentiment === 'Negative') negativeCount++;
+    else if (sentiment === 'N/A') naCount++;
+    else neutralCount++;
+  });
+
+  const stopWords = new Set(['the','and','a','to','of','in','i','is','that','it','for','on','with','was','as','at','by','an','be','this','are','from','or','your','our','we','you','it\'s','its','have']);
+  const termCounts = {};
+  targetDeck.forEach(r => {
+    OPTIONAL_TEXT_KEYS.forEach(k => {
+      (r[k] || '').toLowerCase().split(/[^a-zA-Z]+/).forEach(w => {
+        if (w.length > 2 && !stopWords.has(w)) {
+          termCounts[w] = (termCounts[w] || 0) + 1;
+        }
+      });
+    });
+  });
+  const topTerm1 = Object.entries(termCounts).sort((a,b)=>b[1]-a[1])[0];
+  const highTermLabel = topTerm1 ? `"${topTerm1[0]}" (${topTerm1[1]}×)` : 'None';
+
+  document.getElementById('summary-kpis').innerHTML = `
+    <div class="kpi accent">
+      <div class="val">${totalCount}</div>
+      <div class="lbl">Filtered Form Scope</div>
+      <div class="sub">Active matching suppliers</div>
+    </div>
+    <div class="kpi generic">
+      <div class="val">${textResponseCount}</div>
+      <div class="lbl">Total Narrative Comments</div>
+      <div class="sub">Across all optional blocks</div>
+    </div>
+    <div class="kpi good">
+      <div class="val">${totalCount ? Math.round(textResponseCount/totalCount*100) : 0}%</div>
+      <div class="lbl">Respondents Leaving Text</div>
+      <div class="sub">Absolute commentary density</div>
+    </div>
+    <div class="kpi warn">
+      <div class="val" style="font-size:16px; font-weight:700; padding:6px 0;">${highTermLabel}</div>
+      <div class="lbl">Top Mentioned Term</div>
+      <div class="sub">Excludes standard grammar stop words</div>
+    </div>
+  `;
+
+  const orgFrequencies = evaluateFrequencyCounts(targetDeck, 'org_type');
+  const orgTotal = orgFrequencies.reduce((s, x) => s + x[1], 0) || 1;
+  buildRenderedChart('chart-sum-org', {
+    type: 'doughnut',
+    data: {
+      labels: orgFrequencies.map(x => x[0]),
+      datasets: [{ data: orgFrequencies.map(x => x[1]), backgroundColor: PALETTE, borderWidth: 0, hoverOffset: 6 }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: { color: cssVar('--chart-tick'), font: { size: 10 }, boxWidth: 12, padding: 8 }
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ` ${ctx.raw} (${Math.round(ctx.raw / orgTotal * 100)}%)`
+          }
+        }
+      }
+    }
+  });
+
+  buildRenderedChart('chart-sum-sentiment', {
+    type: 'bar',
+    data: {
+      labels: ['Positive', 'Neutral', 'Negative', 'N/A (no text)'],
+      datasets: [{
+        label: 'Respondent Count',
+        data: [positiveCount, neutralCount, negativeCount, naCount],
+        backgroundColor: ['#4caf82', '#7a83a0', '#e05c5c', '#3a3f55']
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: cssVar('--chart-tick') }, grid: { display: false } },
+        y: { ticks: { color: cssVar('--chart-tick') }, grid: { color: cssVar('--chart-grid') } }
+      }
+    }
+  });
+
+  generateAIInsightsEngine(targetDeck);
+}
+
+function generateAIInsightsEngine(d) {
+  const total = d.length;
+  if (!total) {
+    document.getElementById('insights-main').innerHTML = '<div class="no-data">No active cohorts to analyze.</div>';
+    document.getElementById('insights-comments').innerHTML = '<div class="no-data">No active text to extract.</div>';
+    document.getElementById('insights-stats').innerHTML = '<div class="no-data">No metrics calculated.</div>';
+    return;
+  }
+
+  // ── Text-based analysis ──
+  const stopWords = new Set(['the','and','a','to','of','in','i','is','that','it','for','on','with','was','as','at','by','an','be','this','are','from','or','your','our','we','you','its','have','not','but','they','will','can','had','has','do','if','my','me','so','up','no','all','more','just','also','when','how','would','could','should','get','very','still','please','per','even','been']);
+  const termCounts = { pw: {}, transcepta: {}, suggestions: {} };
+  const fieldMap = { pw: 'paymentworks_issues_open', transcepta: 'transcepta_issues_open', suggestions: 'suggestions_open' };
+
+  Object.entries(fieldMap).forEach(([bucket, fieldKey]) => {
+    d.forEach(r => {
+      (r[fieldKey] || '').toLowerCase().split(/[^a-zA-Z]+/).forEach(w => {
+        if (w.length > 3 && !stopWords.has(w)) {
+          termCounts[bucket][w] = (termCounts[bucket][w] || 0) + 1;
+        }
+      });
+    });
+  });
+
+  const topTerms = (bucket, n) => Object.entries(termCounts[bucket])
+    .sort((a,b)=>b[1]-a[1]).slice(0,n)
+    .map(([w, c]) => `<em>${w}</em> (${c}×)`).join(', ') || '—';
+
+  // Sentiment breakdown per field — use same logic as calculateFeedbackSentiment but field-specific
+  const sentimentByField = { pw: {pos:0,neu:0,neg:0,na:0}, transcepta: {pos:0,neu:0,neg:0,na:0}, suggestions: {pos:0,neu:0,neg:0,na:0} };
+  const negPatterns = ['difficult','awful','horrible','frustrat','worst','terrible','fail','slow','confus','poor','bad','reject','issue','problem','error','delay','unable','never','broken','would be better','would be helpful','shouldn\'t have to','we prefer','not working','not ideal','not clear','not easy','unreasonable','still waiting','not resolved','not paid','delayed payment','cumbersome','complicated','burden'];
+  const posPatterns = ['excellent','great','awesome','love','perfect','smooth','satisfied','thank you','appreciate','very helpful','very easy','very clear','works well','no issues','happy with','pleased with','good experience'];
+
+  d.forEach(r => {
+    Object.entries(fieldMap).forEach(([bucket, key]) => {
+      const txt = (r[key] || '').trim();
+      if (!txt) { sentimentByField[bucket].na++; return; }
+      const t = txt.toLowerCase();
+      const neg = negPatterns.filter(p => t.includes(p)).length;
+      const pos = posPatterns.filter(p => t.includes(p)).length;
+      if (neg > 0 && neg >= pos) sentimentByField[bucket].neg++;
+      else if (pos > 0 && pos > neg) sentimentByField[bucket].pos++;
+      else sentimentByField[bucket].neu++;
+    });
+  });
+
+  const pwHasText  = d.filter(r => (r.paymentworks_issues_open  || '').trim().length > 5).length;
+  const tHasText   = d.filter(r => (r.transcepta_issues_open    || '').trim().length > 5).length;
+  const sHasText   = d.filter(r => (r.suggestions_open          || '').trim().length > 5).length;
+  const anyText    = d.filter(r => OPTIONAL_TEXT_KEYS.some(k => (r[k]||'').trim().length > 5)).length;
+
+  // Friction phrase detection across all text
+  const frictionPhrases = ['register','payment','invoice','portal','support','contact','slow','error','confus','delay','manual','process'];
+  const phraseCounts = {};
+  frictionPhrases.forEach(p => {
+    phraseCounts[p] = d.filter(r => OPTIONAL_TEXT_KEYS.some(k => (r[k]||'').toLowerCase().includes(p))).length;
+  });
+  const topFriction = Object.entries(phraseCounts).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([p,c])=>`<em>${p}</em> (${c} mentions)`).join(', ');
+
+  const findingsList = [
+    { class: 'accent', text: `<strong>Text Response Density:</strong> <strong>${anyText}</strong> of ${total} respondents (${Math.round(anyText/total*100)}%) left qualitative narrative feedback across Q7, Q13, or Q18.` },
+    { class: pwHasText > tHasText ? 'bad' : 'warn', text: `<strong>PaymentWorks Narrative Volume:</strong> <strong>${pwHasText}</strong> respondents described issues with PaymentWorks. Top terms in those comments: ${topTerms('pw', 4)}.` },
+    { class: tHasText > 20 ? 'bad' : 'warn', text: `<strong>Transcepta Narrative Volume:</strong> <strong>${tHasText}</strong> respondents described Transcepta issues. Top terms: ${topTerms('transcepta', 4)}.` },
+    { class: 'good', text: `<strong>Suggestion Themes:</strong> <strong>${sHasText}</strong> respondents left improvement suggestions. Top recurring terms: ${topTerms('suggestions', 4)}.` },
+    { class: 'bad',  text: `<strong>Cross-Text Friction Signals:</strong> Most frequently mentioned friction topics across all text fields: ${topFriction}.` }
+  ];
+  document.getElementById('insights-main').innerHTML = findingsList.map(f => `<div class="insight ${f.class}">${f.text}</div>`).join('');
+
+  // Per-question sentiment breakdown
+  const pwNeg  = sentimentByField.pw.neg,  pwPos  = sentimentByField.pw.pos;
+  const tNeg   = sentimentByField.transcepta.neg, tPos = sentimentByField.transcepta.pos;
+  const sNeg   = sentimentByField.suggestions.neg, sPos = sentimentByField.suggestions.pos;
+
+  const commentThemes = [
+    { class: pwNeg > pwPos ? 'bad' : 'good', text: `<strong>Q7 PaymentWorks Sentiment:</strong> ${pwPos} positive · ${sentimentByField.pw.neu} neutral · ${pwNeg} negative comments out of ${pwHasText} total responses.` },
+    { class: tNeg > tPos ? 'bad' : 'good',   text: `<strong>Q13 Transcepta Sentiment:</strong> ${tPos} positive · ${sentimentByField.transcepta.neu} neutral · ${tNeg} negative comments out of ${tHasText} total responses.` },
+    { class: sNeg > sPos ? 'warn' : 'good',  text: `<strong>Q18 Suggestions Sentiment:</strong> ${sPos} positive · ${sentimentByField.suggestions.neu} neutral · ${sNeg} negative comments out of ${sHasText} total responses.` },
+    { class: 'accent', text: `<strong>Unique Vocabulary:</strong> Q7 has <strong>${Object.keys(termCounts.pw).length}</strong> unique terms · Q13 has <strong>${Object.keys(termCounts.transcepta).length}</strong> · Q18 has <strong>${Object.keys(termCounts.suggestions).length}</strong>.` }
+  ];
+  document.getElementById('insights-comments').innerHTML = commentThemes.map(f => `<div class="insight ${f.class}">${f.text}</div>`).join('');
+
+  // Stats bars: text-focused + per-question structured response rates
+  const qRates = NON_OPTIONAL_KEYS.map(keyId => {
+    const fieldKey = SURVEY_SCHEMA[keyId].key;
+    const responded = d.filter(r => String(r[fieldKey]||'').trim()).length;
+    return { label: SURVEY_SCHEMA[keyId].txt.replace(/^Q\d+\.\s*/,'').slice(0,50), val: total ? Math.round(responded/total*100) : 0, qNum: keyId.toUpperCase() };
+  });
+
+  const summaryStatsDeck = [
+    { label: 'Q7 PaymentWorks Issues — response rate',    val: Math.round(pwHasText / total * 100), section: false },
+    { label: 'Q13 Transcepta Issues — response rate',     val: Math.round(tHasText  / total * 100), section: false },
+    { label: 'Q18 Suggestions — response rate',           val: Math.round(sHasText  / total * 100), section: false },
+    { label: 'Q7 Negative sentiment share',               val: pwHasText  ? Math.round(pwNeg  / pwHasText  * 100) : 0, section: false },
+    { label: 'Q13 Negative sentiment share',              val: tHasText   ? Math.round(tNeg   / tHasText   * 100) : 0, section: false },
+    { label: 'Q18 Negative sentiment share',              val: sHasText   ? Math.round(sNeg   / sHasText   * 100) : 0, section: false },
+  ];
+
+  const allStats = [
+    { label: '— TEXT FIELD RESPONSE RATES & SENTIMENT —', val: null },
+    ...summaryStatsDeck,
+    { label: '— STRUCTURED QUESTION RESPONSE RATES —', val: null },
+    ...qRates.map(q => ({ label: `${q.qNum.replace('q','Q').toUpperCase()}: ${q.label}`, val: q.val })),
+  ];
+
+  document.getElementById('insights-stats').innerHTML = allStats.map((item, i) => {
+    if (item.val === null) {
+      return `<div style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); padding:10px 0 4px; border-top:1px solid var(--border); margin-top:6px;">${item.label}</div>`;
+    }
+    return `
+      <div class="hbar-item">
+        <div class="hbar-label" style="min-width:320px;max-width:320px; white-space:normal; line-height:1.3;" title="${item.label}">${item.label}</div>
+        <div class="hbar-track"><div class="hbar-fill" style="width:${item.val}%; background:${PALETTE[i % PALETTE.length]}">${item.val}%</div></div>
+        <div class="hbar-count">${item.val}%</div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ─────────────────────────────────────────────────────────────
+// CSS VAR RESOLVER — Chart.js cannot read CSS variables directly
+// ─────────────────────────────────────────────────────────────
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#7a83a0';
+}
+
+// ─────────────────────────────────────────────────────────────
+// TAB 2: PLOTS MATRIX COHORT DISCOVERY GRID GENERATION
+// ─────────────────────────────────────────────────────────────
+
+// Questions that include "Other (Please specify):" as a survey choice,
+// mapped to the free-text field that holds what people typed
+const OTHER_TEXT_FIELD_MAP = {
+  q1:  'org_type_other',
+  q2:  'role_other',
+  q4:  'paymentworks_actions_text',
+  q6:  'paymentworks_support_other',
+  q9:  'invoice_submission_other',
+  q12: 'transcepta_support_other',
+  q14: 'ipps_resources_other',
+  q15: 'ipps_difficulties_other',
+};
+
+// Close any open verbatim popups
+function closeAllPopups() {
+  document.querySelectorAll('.other-verbatim-popup').forEach(p => p.classList.remove('open'));
+}
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.other-verbatim-popup') && !e.target.closest('.other-bar-trigger')) {
+    closeAllPopups();
+  }
+});
+
+function buildPlotCards() {
+  const gridContainer = document.getElementById('plots-container');
+  gridContainer.innerHTML = '';
+
+  NON_OPTIONAL_KEYS.forEach(keyId => {
+    const contextMetadata = SURVEY_SCHEMA[keyId];
+    const dataPropertyKey = contextMetadata.key;
+    const frequencyTupleList = evaluateFrequencyCounts(FILTERED, dataPropertyKey);
+
+    // Response rate
+    const respondedCount = FILTERED.filter(r => String(r[dataPropertyKey] || '').trim()).length;
+    const responseRate = FILTERED.length ? Math.round(respondedCount / FILTERED.length * 100) : 0;
+
+    // Separate out "Other (Please specify):" if it's a real survey choice for this question
+    const otherTextFieldKey = OTHER_TEXT_FIELD_MAP[keyId];
+    const otherChoiceLabel = 'Other (Please specify):';
+    // All categories to show (ALL of them — no aggregation)
+    let allCategories = [...frequencyTupleList];
+    // If this question has an "Other" option, rename the matching entry
+    let otherEntry = null;
+    if (otherTextFieldKey) {
+      const otherIdx = allCategories.findIndex(([lbl]) =>
+        lbl.toLowerCase().includes('other') && lbl.toLowerCase().includes('specify')
+      );
+      if (otherIdx !== -1) {
+        otherEntry = [otherChoiceLabel, allCategories[otherIdx][1]];
+        allCategories.splice(otherIdx, 1); // remove from main list, will re-add at end
+      }
+    }
+    if (otherEntry) allCategories.push(otherEntry);
+
+    // Chart labels for axis: truncated. Full labels stored separately for tooltip.
+    const fullLabels  = allCategories.map(([lbl]) => lbl);
+    const chartLabels = allCategories.map(([lbl]) => lbl.length > 22 ? lbl.slice(0, 21) + '…' : lbl);
+    const chartData   = allCategories.map(([, n]) => n);
+    const bgColors    = allCategories.map(([lbl], i) =>
+      (lbl === otherChoiceLabel) ? '#6b7394' : PALETTE[i % PALETTE.length]
+    );
+
+    // Verbatim "Other" responses for popup
+    const otherVerbatimTexts = otherTextFieldKey
+      ? FILTERED.map(r => (r[otherTextFieldKey] || '').trim()).filter(Boolean)
+      : [];
+
+    // Card wrapper — full-width (cols-2 grid but chart height scales with # of bars)
+    const cardWrapperNode = document.createElement('div');
+    cardWrapperNode.className = 'card plot-card-wrapper';
+
+    // Title row + response rate
+    const titleRow = document.createElement('div');
+    titleRow.style = 'display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; gap:8px;';
+    titleRow.innerHTML = `
+      <div class="card-title" style="margin-bottom:0; flex:1;">${contextMetadata.txt}</div>
+      <span style="font-size:10px; color:var(--good); background:rgba(76,175,130,.12); border-radius:12px; padding:2px 8px; white-space:nowrap; flex-shrink:0;">${responseRate}% responded</span>
+    `;
+    cardWrapperNode.appendChild(titleRow);
+
+    // Uniform fixed-height container — Chart.js fills it naturally.
+    // 2 bars → 2 fat bars. 10 bars → 10 compact bars. Same height, same container.
+    const chartWrapNode = document.createElement('div');
+    chartWrapNode.style = 'position:relative; height:260px; width:100%;';
+    const canvasNode = document.createElement('canvas');
+    canvasNode.id = 'canvas-plot-' + keyId;
+    chartWrapNode.appendChild(canvasNode);
+    cardWrapperNode.appendChild(chartWrapNode);
+
+    // "Other" verbatim popup (created once per card, shown on bar click)
+    if (otherTextFieldKey && otherVerbatimTexts.length > 0) {
+      const popup = document.createElement('div');
+      popup.className = 'other-verbatim-popup';
+      popup.id = 'popup-' + keyId;
+      popup.innerHTML = `
+        <div class="popup-title">
+          <span>Other (Please specify) — ${otherVerbatimTexts.length} responses</span>
+          <span class="popup-close" onclick="document.getElementById('popup-${keyId}').classList.remove('open')">×</span>
+        </div>
+        <ul>${otherVerbatimTexts.map(t => `<li>${t.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</li>`).join('')}</ul>
+      `;
+      cardWrapperNode.appendChild(popup);
+    }
+
+    gridContainer.appendChild(cardWrapperNode);
+
+    const otherBarIndex = otherEntry ? allCategories.length - 1 : -1;
+    const totalResponded = chartData.reduce((a, b) => a + b, 0) || 1;
+
+    const isDonut = tab2ChartType === 'donut';
+
+    if (isDonut) {
+      buildRenderedChart('canvas-plot-' + keyId, {
+        type: 'doughnut',
+        data: {
+          labels: fullLabels,
+          datasets: [{
+            data: chartData,
+            backgroundColor: bgColors,
+            borderWidth: 0,
+            hoverOffset: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: { color: cssVar('--chart-tick'), font: { size: 9 }, boxWidth: 10, padding: 6 }
+            },
+            tooltip: {
+              callbacks: {
+                title: (items) => fullLabels[items[0].dataIndex],
+                label: (ctx) => {
+                  const count = ctx.raw;
+                  const pct = Math.round(count / totalResponded * 100);
+                  const isOther = ctx.dataIndex === otherBarIndex && otherVerbatimTexts.length > 0;
+                  return ` ${count} (${pct}%)${isOther ? ' — click for verbatim' : ''}`;
+                }
+              }
+            }
+          },
+          onClick: (evt, elements) => {
+            if (!elements.length) return;
+            const idx = elements[0].index;
+            if (idx === otherBarIndex && otherTextFieldKey) {
+              closeAllPopups();
+              const popup = document.getElementById('popup-' + keyId);
+              if (popup) {
+                const card = cardWrapperNode.getBoundingClientRect();
+                popup.style.top = (evt.native.clientY - card.top + 8) + 'px';
+                popup.style.left = (evt.native.clientX - card.left + 8) + 'px';
+                popup.classList.add('open');
+              }
+            }
+          }
+        }
+      });
+    } else {
+      buildRenderedChart('canvas-plot-' + keyId, {
+        type: 'bar',
+        data: {
+          labels: chartLabels,
+          datasets: [{
+            data: chartData,
+            backgroundColor: bgColors,
+            borderRadius: 4,
+            barPercentage: 0.8,
+            categoryPercentage: 0.9
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                title: (items) => fullLabels[items[0].dataIndex],
+                label: (ctx) => {
+                  const count = ctx.raw;
+                  const pct = Math.round(count / totalResponded * 100);
+                  const isOther = ctx.dataIndex === otherBarIndex && otherVerbatimTexts.length > 0;
+                  return ` ${count} (${pct}%)${isOther ? ' — click bar to see verbatim text' : ''}`;
+                }
+              }
+            }
+          },
+          onClick: (evt, elements) => {
+            if (!elements.length) return;
+            const idx = elements[0].index;
+            if (idx === otherBarIndex && otherTextFieldKey) {
+              closeAllPopups();
+              const popup = document.getElementById('popup-' + keyId);
+              if (popup) {
+                const card = cardWrapperNode.getBoundingClientRect();
+                popup.style.top = (evt.native.clientY - card.top + 8) + 'px';
+                popup.style.left = (evt.native.clientX - card.left + 8) + 'px';
+                popup.classList.add('open');
+              }
+            }
+          },
+          scales: {
+            x: { ticks: { color: cssVar('--chart-tick'), font: { size: 9 } }, grid: { color: cssVar('--chart-grid') } },
+            y: {
+              ticks: {
+                color: cssVar('--chart-tick'), font: { size: 9 },
+                callback: function(val) { return this.getLabelForValue(val); }
+              },
+              grid: { display: false }
+            }
+          }
+        }
+      });
+    }
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// TAB 3: COHORT DISCOVERY SELECTION POPULATION ENGINE
+// ─────────────────────────────────────────────────────────────
+function buildCohortSelectors() {
+  const selectionDropdown = document.getElementById('cohort-col');
+  if (!selectionDropdown) return;
+  
+  selectionDropdown.innerHTML = '<option value="">-- Choose Tracking Core Target Column --</option>';
+  NON_OPTIONAL_KEYS.forEach(keyId => {
+    const optionNode = document.createElement('option');
+    optionNode.value = keyId;
+    optionNode.textContent = SURVEY_SCHEMA[keyId].txt;
+    selectionDropdown.appendChild(optionNode);
+  });
+  populateCohortValues();
+}
+
+function populateCohortValues() {
+  const questionKeyId = document.getElementById('cohort-col')?.value;
+  const targetDropdown = document.getElementById('cohort-val');
+  if (!targetDropdown) return;
+  
+  if (!questionKeyId) {
+    targetDropdown.innerHTML = '<option value="">No Active Cohort Tracer Rules Selected</option>';
+    return;
+  }
+  
+  const schemaPropertyKey = SURVEY_SCHEMA[questionKeyId].key;
+  const valuesTupleList = evaluateFrequencyCounts(ALL_DATA, schemaPropertyKey);
+  
+  targetDropdown.innerHTML = '<option value="">Trace All Combined Answers</option>';
+  valuesTupleList.forEach(([labelString, freq]) => {
+    const opt = document.createElement('option');
+    opt.value = labelString;
+    opt.textContent = `${labelString} (${freq} occurrences)`;
+    targetDropdown.appendChild(opt);
+  });
+}
+
+function buildObsPlotContainers() {
+  const grid = document.getElementById('obs-plots-grid');
+  if(!grid) return;
+  grid.innerHTML = '';
+  NON_OPTIONAL_KEYS.forEach(k => {
+    grid.innerHTML += `
+      <div style="background:var(--surface); padding:8px; border-radius:6px; border:1px solid var(--border);">
+        <div style="font-size:10px; color:var(--muted); font-weight:700; margin-bottom:4px; height:28px; overflow:hidden;">${SURVEY_SCHEMA[k].txt}</div>
+        <div style="position:relative; height:120px;"><canvas id="obs-plot-${k}"></canvas></div>
+      </div>
+    `;
+  });
+}
+
+function renderTab3CohortPlots() {
+  const cohortQ = document.getElementById('cohort-col')?.value || 'All';
+  const cohortV = document.getElementById('cohort-val')?.value || 'All';
+  const titleEl = document.getElementById('obs-plots-header');
+  if (titleEl) titleEl.textContent = `Cohort Cross-Tab Tracer System Dashboard (Targeting: ${cohortQ} → ${cohortV})`;
+
+  const isDonut = tab3ChartType === 'donut';
+
+  NON_OPTIONAL_KEYS.forEach(k => {
+    const elementProperty = SURVEY_SCHEMA[k].key;
+    const allData = evaluateFrequencyCounts(FILTERED, elementProperty);
+    const nCats = allData.length || 1;
+    const dynFont = Math.max(5, Math.min(9, Math.floor(90 / nCats)));
+    const barPct = Math.min(0.9, Math.max(0.3, 0.9 - (nCats - 5) * 0.04));
+    const total = allData.reduce((s, x) => s + x[1], 0) || 1;
+    const fullLabels = allData.map(x => x[0]);
+
+    if (isDonut) {
+      buildRenderedChart('obs-plot-' + k, {
+        type: 'doughnut',
+        data: {
+          labels: fullLabels,
+          datasets: [{ data: allData.map(x => x[1]), backgroundColor: PALETTE, borderWidth: 0, hoverOffset: 4 }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: { color: cssVar('--chart-tick'), font: { size: 8 }, boxWidth: 8, padding: 4 }
+            },
+            tooltip: {
+              callbacks: {
+                title: (items) => fullLabels[items[0].dataIndex],
+                label: (ctx) => ` ${ctx.raw} (${Math.round(ctx.raw / total * 100)}%)`
+              }
+            }
+          }
+        }
+      });
+    } else {
+      buildRenderedChart('obs-plot-' + k, {
+        type: 'bar',
+        data: {
+          labels: fullLabels,
+          datasets: [{ data: allData.map(x => x[1]), backgroundColor: PALETTE, borderRadius: 2,
+            barPercentage: barPct, categoryPercentage: barPct }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                title: (items) => fullLabels[items[0].dataIndex],
+                label: (ctx) => ` ${ctx.raw} (${Math.round(ctx.raw / total * 100)}%)`
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: {
+                color: cssVar('--chart-tick'), font: { size: dynFont },
+                maxRotation: 45, minRotation: 30, autoSkip: false,
+                callback: function(val) {
+                  const lbl = this.getLabelForValue(val);
+                  return lbl.length > 8 ? lbl.slice(0, 7) + '…' : lbl;
+                }
+              },
+              grid: { display: false }
+            },
+            y: { ticks: { color: cssVar('--chart-tick'), font: { size: dynFont } }, grid: { color: cssVar('--chart-grid') } }
+          }
+        }
+      });
+    }
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// MICRODATA GRAPHIC TABLE RENDER ENGINE
+// ─────────────────────────────────────────────────────────────
+function renderObservationsTable() {
+  const searchQueryString = document.getElementById('obs-search')?.value?.toLowerCase() || '';
+  const rowsPerPageSetting = parseInt(document.getElementById('obs-per-page')?.value || 30);
+  
+  let targetedRows = [...FILTERED];
+  
+  if (searchQueryString) {
+    targetedRows = targetedRows.filter(r => 
+      Object.values(r).some(cellValue => String(cellValue).toLowerCase().includes(searchQueryString))
+    );
+  }
+
+  const wrapperNode = document.getElementById('obs-table-container');
+  if (!targetedRows.length) {
+    wrapperNode.innerHTML = '<div class="no-data">No records match parameters. Lower query constraints.</div>';
+    document.getElementById('obs-pagination-controls').innerHTML = '';
+    return;
+  }
+
+  const totalPagesComputed = Math.ceil(targetedRows.length / rowsPerPageSetting);
+  if (obsPage > totalPagesComputed) obsPage = 1;
+  const startIndexOffset = (obsPage - 1) * rowsPerPageSetting;
+  const slicedPageDataDeck = targetedRows.slice(startIndexOffset, startIndexOffset + rowsPerPageSetting);
+
+  // All columns in schema order + free-text columns
+  const allCols = [
+    { key: 'org_type',                   label: 'Q1. Org Type' },
+    { key: 'role',                        label: 'Q2. Role' },
+    { key: 'aware_paymentworks',          label: 'Q3. Aware PW?' },
+    { key: 'paymentworks_actions',        label: 'Q4. PW Actions' },
+    { key: 'paymentworks_difficulties',   label: 'Q5. PW Difficulties' },
+    { key: 'paymentworks_support_source', label: 'Q6. PW Support' },
+    { key: 'aware_transcepta',            label: 'Q8. Aware Transcepta?' },
+    { key: 'invoice_submission_method',   label: 'Q9. Invoice Method' },
+    { key: 'transcepta_interactions',     label: 'Q10. Transcepta Interactions' },
+    { key: 'transcepta_difficulties',     label: 'Q11. Transcepta Difficulties' },
+    { key: 'transcepta_support_source',   label: 'Q12. Transcepta Support' },
+    { key: 'ipps_resources_aware',        label: 'Q14. IPPS Resources' },
+    { key: 'ipps_difficulties',           label: 'Q15. IPPS Difficulties' },
+    { key: 'po_clarity_rating',           label: 'Q16. PO Clarity' },
+    { key: 'aware_po_nonpayment',         label: 'Q17. PO Non-Payment?' },
+    { key: 'paymentworks_issues_open',    label: 'Q7. PW Issues (text)', isText: true },
+    { key: 'transcepta_issues_open',      label: 'Q13. Transcepta Issues (text)', isText: true },
+    { key: 'suggestions_open',            label: 'Q18. Suggestions (text)', isText: true },
+    { key: '__sentiment__',               label: 'Est. Overall Sentiment <span class="nlp-warn-icon" onclick="event.stopPropagation();document.getElementById(\'disclaimer-modal\').classList.add(\'open\')" title="NLP Disclaimer — click to read">⚠️</span>' },
+  ];
+
+  function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function hlSearch(s) {
+    if (!searchQueryString || !s) return esc(s);
+    const safe = searchQueryString.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    return esc(s).replace(new RegExp(`(${safe})`,'gi'), '<mark style="background:rgba(91,142,240,.35);color:inherit;border-radius:2px;padding:0 1px">$1</mark>');
+  }
+
+  let DOMStringTable = `<table><thead><tr>${allCols.map(c => `<th>${c.label}</th>`).join('')}</tr></thead><tbody>`;
+
+  slicedPageDataDeck.forEach((row, rowIdx) => {
+    const sentimentLabel = calculateFeedbackSentiment(row);
+    const sentClass = sentimentLabel === 'Positive' ? 'green' : sentimentLabel === 'Negative' ? 'red' : '';
+    DOMStringTable += '<tr>';
+    allCols.forEach(col => {
+      if (col.key === '__sentiment__') {
+        DOMStringTable += `<td title="Automated NLP estimate — may be inaccurate. Click ⚠️ in header for full disclaimer."><span class="cell-pill ${sentClass}">${sentimentLabel}</span></td>`;
+        return;
+      }
+      const val = row[col.key] || '';
+      if (col.isText) {
+        const preview = val.length > 55 ? val.slice(0, 54) + '…' : val;
+        const dataTip = val.replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        DOMStringTable += `<td class="has-tip" data-tip="${dataTip}" style="max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text);">`;
+        if (!val) { DOMStringTable += '<span style="color:var(--muted)">—</span>'; }
+        else { DOMStringTable += hlSearch(preview); }
+        DOMStringTable += '</td>';
+      } else {
+        const dataTip = val.replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        DOMStringTable += `<td class="has-tip" data-tip="${dataTip}" style="max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${hlSearch(val) || '<span style="color:var(--muted)">—</span>'}</td>`;
+      }
+    });
+    DOMStringTable += '</tr>';
+  });
+
+  DOMStringTable += '</tbody></table>';
+  wrapperNode.innerHTML = DOMStringTable;
+
+  let controlsHtmlDeck = '';
+  for (let i = 1; i <= totalPagesComputed; i++) {
+    if (i <= 3 || i === totalPagesComputed || (i >= obsPage - 1 && i <= obsPage + 1)) {
+      controlsHtmlDeck += `<button class="${i === obsPage ? 'active' : ''}" onclick="obsPage=${i};renderObservationsTable()">${i}</button>`;
+    } else if (i === 4 || i === totalPagesComputed - 1) {
+      controlsHtmlDeck += `<button disabled style="opacity:0.35">…</button>`;
+    }
+  }
+  document.getElementById('obs-pagination-controls').innerHTML = controlsHtmlDeck;
+}
+
+function toggleExpandCell(cellId, fullText) {
+  const cell = document.getElementById(cellId);
+  if (!cell) return;
+  const searchQ = document.getElementById('obs-search')?.value?.toLowerCase() || '';
+  function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function hlSearch(s) {
+    if (!searchQ || !s) return esc(s);
+    const safe = searchQ.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    return esc(s).replace(new RegExp(`(${safe})`,'gi'), '<mark style="background:rgba(91,142,240,.35);color:inherit;border-radius:2px;padding:0 1px">$1</mark>');
+  }
+  if (cell.classList.contains('expanded')) {
+    cell.classList.remove('expanded');
+    const preview = fullText.length > 60 ? fullText.slice(0,60)+'…' : fullText;
+    cell.style.cssText = 'max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; color:var(--text);';
+    cell.innerHTML = `<span class="expand-hint">${hlSearch(preview)}</span>`;
+  } else {
+    cell.classList.add('expanded');
+    cell.style.cssText = 'white-space:normal; overflow:visible; max-width:360px; background:var(--surface2); cursor:pointer; color:var(--text);';
+    cell.innerHTML = hlSearch(fullText);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// TAB 4: QUALITATIVE SEARCH TEXT MINER
+// ─────────────────────────────────────────────────────────────
+function renderTextComments() {
+  const activeFieldTarget = document.getElementById('mining-field').value;
+  const activeSentimentTarget = document.getElementById('mining-sentiment').value;
+  const searchFilterQuery = document.getElementById('mining-search').value.toLowerCase();
+  const deckNode = document.getElementById('comments-render-deck');
+  
+  deckNode.innerHTML = '';
+  let printedMatchCounter = 0;
+
+  // Sentiment counts per field (always over ALL matching text, before sentiment filter)
+  const sentimentCounts = {
+    paymentworks_issues_open:  { Positive: 0, Neutral: 0, Negative: 0, 'N/A': 0 },
+    transcepta_issues_open:    { Positive: 0, Neutral: 0, Negative: 0, 'N/A': 0 },
+    suggestions_open:          { Positive: 0, Neutral: 0, Negative: 0, 'N/A': 0 }
+  };
+  const fieldsForChart = activeFieldTarget === 'all' ? OPTIONAL_TEXT_KEYS : [activeFieldTarget];
+
+  FILTERED.forEach(record => {
+    fieldsForChart.forEach(propertyKey => {
+      const txt = (record[propertyKey] || '').trim();
+      if (!txt) return;
+      if (searchFilterQuery && !txt.toLowerCase().includes(searchFilterQuery)) return;
+      const s = calculateFeedbackSentiment(record);
+      if (sentimentCounts[propertyKey]) sentimentCounts[propertyKey][s]++;
+    });
+  });
+
+  // Render comments (with sentiment filter applied)
+  FILTERED.forEach(record => {
+    const propertiesToIterate = activeFieldTarget === 'all' ? OPTIONAL_TEXT_KEYS : [activeFieldTarget];
+    
+    propertiesToIterate.forEach(propertyKey => {
+      let absoluteTextContent = record[propertyKey] || '';
+      if (!absoluteTextContent.trim()) return;
+      if (searchFilterQuery && !absoluteTextContent.toLowerCase().includes(searchFilterQuery)) return;
+      
+      const currentSentiment = calculateFeedbackSentiment(record);
+      if (activeSentimentTarget !== 'all' && currentSentiment !== activeSentimentTarget) return;
+
+      printedMatchCounter++;
+      let markedUpHTMLStringText = escapeHtmlCharacterStrings(absoluteTextContent);
+      
+      if (searchFilterQuery) {
+        const structuralRegexPattern = new RegExp(`(${searchFilterQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+        markedUpHTMLStringText = markedUpHTMLStringText.replace(structuralRegexPattern, '<mark>$1</mark>');
+      }
+
+      // Find readable label for this field key
+      const schemaEntry = Object.values(SURVEY_SCHEMA).find(s => s.key === propertyKey);
+      const fieldLabel = schemaEntry ? schemaEntry.txt.split('.')[0] : propertyKey;
+
+      const commentCardNode = document.createElement('div');
+      commentCardNode.className = 'comment-card';
+      commentCardNode.innerHTML = `
+        <div class="comment-meta">
+          <span class="cell-pill">${fieldLabel}</span>
+          <span>Org: <strong>${record.org_type || 'Unknown'}</strong></span> | 
+          <span>Role: <strong>${record.role || 'Unknown'}</strong></span> | 
+          <span>Sentiment: <strong style="color:${currentSentiment==='Positive'?'var(--good)':currentSentiment==='Negative'?'var(--bad)':'var(--muted)'}">${currentSentiment}</strong></span>
+        </div>
+        <div class="comment-text">${markedUpHTMLStringText}</div>
+      `;
+      deckNode.appendChild(commentCardNode);
+    });
+  });
+
+  // Build sentiment chart — grouped by question, plus Overall
+  const activeFields = activeFieldTarget === 'all' ? OPTIONAL_TEXT_KEYS : [activeFieldTarget];
+  const fieldShortNames = {
+    paymentworks_issues_open: 'Q7 PW Issues',
+    transcepta_issues_open:   'Q13 Transcepta',
+    suggestions_open:         'Q18 Suggestions'
+  };
+
+  if (activeFields.length === 1) {
+    // Single field: simple Pos/Neu/Neg/NA bars
+    const field = activeFields[0];
+    const sc = sentimentCounts[field] || { Positive:0, Neutral:0, Negative:0, 'N/A':0 };
+    buildRenderedChart('chart-miner-sentiment-dist', {
+      type: 'bar',
+      data: {
+        labels: ['Positive', 'Neutral', 'Negative', 'N/A'],
+        datasets: [{
+          label: fieldShortNames[field] || field,
+          data: [sc.Positive, sc.Neutral, sc.Negative, sc['N/A']||0],
+          backgroundColor: ['#4caf82', '#7a83a0', '#e05c5c', '#3a3f55'],
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: cssVar('--chart-tick'), font: { size: 9 } }, grid: { color: cssVar('--chart-grid') } },
+          y: { ticks: { color: cssVar('--chart-tick'), font: { size: 9 } }, grid: { color: cssVar('--chart-grid') } }
+        }
+      }
+    });
+  } else {
+    // All fields: grouped bars per question + Overall column
+    const overallPos = OPTIONAL_TEXT_KEYS.reduce((s,f) => s+(sentimentCounts[f]?.Positive||0), 0);
+    const overallNeu = OPTIONAL_TEXT_KEYS.reduce((s,f) => s+(sentimentCounts[f]?.Neutral||0), 0);
+    const overallNeg = OPTIONAL_TEXT_KEYS.reduce((s,f) => s+(sentimentCounts[f]?.Negative||0), 0);
+    const overallNA  = OPTIONAL_TEXT_KEYS.reduce((s,f) => s+(sentimentCounts[f]?.['N/A']||0), 0);
+
+    const chartLabels = [...activeFields.map(f => fieldShortNames[f] || f), 'Overall'];
+    buildRenderedChart('chart-miner-sentiment-dist', {
+      type: 'bar',
+      data: {
+        labels: chartLabels,
+        datasets: [
+          { label: 'Positive', data: [...activeFields.map(f => sentimentCounts[f]?.Positive||0), overallPos], backgroundColor: '#4caf82', borderRadius: 3 },
+          { label: 'Neutral',  data: [...activeFields.map(f => sentimentCounts[f]?.Neutral||0),  overallNeu], backgroundColor: '#7a83a0', borderRadius: 3 },
+          { label: 'Negative', data: [...activeFields.map(f => sentimentCounts[f]?.Negative||0), overallNeg], backgroundColor: '#e05c5c', borderRadius: 3 },
+          { label: 'N/A',      data: [...activeFields.map(f => sentimentCounts[f]?.['N/A']||0),  overallNA],  backgroundColor: '#3a3f55', borderRadius: 3 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'top', labels: { color: cssVar('--chart-tick'), font: { size: 10 }, boxWidth: 10 } } },
+        scales: {
+          x: { ticks: { color: cssVar('--chart-tick'), font: { size: 9 } }, grid: { color: cssVar('--chart-grid') } },
+          y: { ticks: { color: cssVar('--chart-tick'), font: { size: 9 } }, grid: { color: cssVar('--chart-grid') } }
+        }
+      }
+    });
+  }
+
+  if (printedMatchCounter === 0) {
+    deckNode.innerHTML = '<div class="no-data">No qualitative records match your target mining parameters.</div>';
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// TAB 5: WORD CANVASES CLOUD ENGINE BREAKDOWNS
+// ─────────────────────────────────────────────────────────────
+function renderVisualWordCloud() {
+  const canvasElement = document.getElementById('wordcloud-canvas');
+  if (!canvasElement) return;
+  const context2d = canvasElement.getContext('2d');
+  
+  const computationalWidth = canvasElement.parentElement.offsetWidth || 400;
+  canvasElement.width = computationalWidth;
+  canvasElement.height = 320;
+  
+  context2d.clearRect(0, 0, computationalWidth, 320);
+
+  const stopWordsCollection = new Set(['the','and','a','to','of','in','i','is','that','it','for','on','with','was','as','at','by','an','be','this','are','from','or','at','your','our','we','you','it\'s','its','they','have','has','had','but','not','this','that']);
+  const vocabularyCountsIndex = {};
+
+  FILTERED.forEach(item => {
+    OPTIONAL_TEXT_KEYS.forEach(key => {
+      const sentenceText = item[key] || '';
+      sentenceText.toLowerCase().split(/[^a-zA-Z']+/).forEach(lexicalWord => {
+        if (lexicalWord.length > 3 && !stopWordsCollection.has(lexicalWord)) {
+          vocabularyCountsIndex[lexicalWord] = (vocabularyCountsIndex[lexicalWord] || 0) + 1;
+        }
+      });
+    });
+  });
+
+  const frequencyTupleList = Object.entries(vocabularyCountsIndex).sort((a, b) => b[1] - a[1]);
+  if (!frequencyTupleList.length) {
+    context2d.fillStyle = '#7a83a0';
+    context2d.font = '14px sans-serif';
+    context2d.fillText('No matching narrative comments found to map into cloud diagrams.', 40, 150);
+    document.getElementById('wc-frequency-table').innerHTML = '<div class="no-data">No text available.</div>';
+    return;
+  }
+
+  const maxCloudWords = parseInt(document.getElementById('wc-max-words')?.value || 40);
+  const targetTupleSlices = frequencyTupleList.slice(0, maxCloudWords);
+
+  const benchmarkMaxFrequency = targetTupleSlices[0][1];
+  const coordinateBoundariesArray = [];
+  
+  targetTupleSlices.forEach(([wordTerm, frequencyValue], index) => {
+    const scalarFontSize = Math.max(11, Math.min(32, (frequencyValue / benchmarkMaxFrequency) * 28 + 10));
+    context2d.font = `bold ${scalarFontSize}px sans-serif`;
+    
+    context2d.fillStyle = PALETTE[index % PALETTE.length] + 'dd';
+    const lexicalMetricWidth = context2d.measureText(wordTerm).width;
+    
+    let computedX = 0, computedY = 0, safetyLoopCounter = 0;
+    let coordinateCollisionFlag = false;
+
+    do {
+      computedX = Math.random() * (computationalWidth - lexicalMetricWidth - 30) + 15;
+      computedY = Math.random() * (320 - scalarFontSize - 30) + scalarFontSize + 15;
+      safetyLoopCounter++;
+      
+      coordinateCollisionFlag = coordinateBoundariesArray.some(coord => 
+        Math.abs(coord.x - computedX) < (coord.w + 8) && 
+        Math.abs(coord.y - computedY) < (coord.h + 5)
+      );
+    } while (safetyLoopCounter < 75 && coordinateCollisionFlag);
+
+    coordinateBoundariesArray.push({ x: computedX, y: computedY, w: lexicalMetricWidth, h: scalarFontSize });
+    context2d.fillText(wordTerm, computedX, computedY);
+  });
+
+  const topWordSlices = frequencyTupleList.slice(0, maxCloudWords);
+  const coreBenchmarkMax = topWordSlices[0]?.[1] || 1;
+  
+  document.getElementById('wc-frequency-table').innerHTML = topWordSlices.map(([word, freq], i) => `
+    <div class="hbar-item">
+      <div class="hbar-label" title="${word}">${word}</div>
+      <div class="hbar-track"><div class="hbar-fill" style="width:${(freq/coreBenchmarkMax*100).toFixed(1)}%; background:${PALETTE[i%PALETTE.length]}">${freq} instances</div></div>
+      <div class="hbar-count">${freq}</div>
+    </div>
+  `).join('');
+}
+
+// ─────────────────────────────────────────────────────────────
+// TEXT TRANSFORMATION CONVERSIONS & PROTECTION UTILS
+// ─────────────────────────────────────────────────────────────
+function escapeHtmlCharacterStrings(stringData) {
+  return (stringData || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ─────────────────────────────────────────────────────────────
+// FLOATING TOOLTIP — serves both .has-tip (data-tip) and .q-info-btn (data-q)
+// Works despite overflow:hidden on parent containers
+// ─────────────────────────────────────────────────────────────
+(function() {
+  const tip = document.getElementById('cell-tooltip');
+  if (!tip) return;
+  document.addEventListener('mouseover', function(e) {
+    const cell = e.target.closest('.has-tip');
+    const qBtn = e.target.closest('.q-info-btn');
+    const target = qBtn || cell;
+    if (!target) { tip.style.display = 'none'; return; }
+    const text = qBtn ? (target.getAttribute('data-q') || '') : (target.getAttribute('data-tip') || '');
+    if (!text || text === '—') { tip.style.display = 'none'; return; }
+    tip.textContent = text;
+    tip.style.display = 'block';
+  });
+  document.addEventListener('mousemove', function(e) {
+    if (tip.style.display === 'none') return;
+    const pad = 14;
+    let x = e.clientX + pad;
+    let y = e.clientY + pad;
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    if (x + tw > window.innerWidth - 8) x = e.clientX - tw - pad;
+    if (y + th > window.innerHeight - 8) y = e.clientY - th - pad;
+    tip.style.left = x + 'px';
+    tip.style.top  = y + 'px';
+  });
+  document.addEventListener('mouseout', function(e) {
+    const leaving = e.target.closest('.has-tip') || e.target.closest('.q-info-btn');
+    if (!leaving) return;
+    const to = e.relatedTarget;
+    if (!to || (!to.closest('.has-tip') && !to.closest('.q-info-btn'))) {
+      tip.style.display = 'none';
+    }
+  });
+})();
+
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('survey-theme', theme);
+  // Re-render everything so charts pick up the new resolved CSS var colors
+  renderTab1SummaryLayout();
+  const activePage = document.querySelector('.page.active');
+  if (activePage?.id === 'tab-plots') buildPlotCards();
+  if (activePage?.id === 'tab-observations') renderTab3CohortPlots();
+  if (activePage?.id === 'tab-comments') renderTextComments();
+}
+
+(function initTheme() {
+  const saved = localStorage.getItem('survey-theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+  // Sync the select once DOM is ready
+  window.addEventListener('DOMContentLoaded', () => {
+    const sel = document.getElementById('theme-select');
+    if (sel) sel.value = saved;
+  });
+})();
+
+</script>
+</body>
+</html>
