@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+.uv/
+*.html
+!src/survey_dashboard/dashboard_template.html
+survey_data.json

@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "survey-dashboard"
+version = "0.1.0"
+description = "Generate an interactive HTML analytics dashboard from survey CSV exports"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+survey-dashboard = "survey_dashboard.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/survey_dashboard"]
